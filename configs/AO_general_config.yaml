@@ -2,9 +2,9 @@
 # general parameters
 ##################################
 general:
-  data_file: '/root/projects/aortic_dissection/data_files/train/sub100_CTA_AO.csv'
+  data_file: '/root/projects/aortic_dissection/data_files/train/CTA_AO.csv'
   val_list: '/root/projects/aortic_dissection/data_files/train/sub10_CTA_AO.csv'
-  save_dir: '/root/projects/aortic_dissection/models//autodl_debug/'
+  save_dir: '/root/projects/aortic_dissection/models/autodl_debug/'
   load_dir: ''
   resume_epoch: -1
   clear_start_epoch: false
@@ -26,11 +26,12 @@ net:
 # data set parameters
 ##################################
 dataset:
+  num_modality: 1
   # 2 for binary segmentation
   num_classes: 2
   # target resample spacing during preprocess
   spacing: [1, 1, 1]
-  crop_size: [192, 192, 128]
+  crop_size: [128, 128, 256]
   aug_config:
     aug_prob: 0.5
     shift_config:
@@ -91,7 +92,7 @@ dataset:
 # training loss
 ####################################
 loss:
-  name: 'DoubleLoss'
+  name: 'DiceLoss'
   double_loss_weight: [0.5, 0.5]
   obj_weight: [1, 1]
   focal_gamma: 2
@@ -102,7 +103,7 @@ loss:
   dim: 3
   # parameters for cldice loss
   cldice_iter: 15
-  smooth: 1e-6
+  smooth: !!float 1e-6 
   # weight for regular term MEEP
   reg_w: 0.5
 
@@ -113,8 +114,8 @@ loss:
 train:
   epochs: 701
   batchsize: 4
-  num_threads: 8
-  lr: 1e-3
+  num_threads: 5
+  lr: !!float 1e-3
   lr_scheduler:
     name: "MultiStepLR"
     params:
@@ -122,15 +123,15 @@ train:
       gamma: 0.1
       last_epoch: -1
   optimizer:
-    name: "AdamW"
+    name: "Adam"
     params:
       betas: [0.9, 0.999]
-      eps: 1e-8
+      eps: !!float 1e-8
       weight_decay: 0
       amsgrad: false
   plot_snapshot: 100
-  save_epochs: 5
-  val_epoch: 5
+  save_epochs: 10
+  val_epoch: 10
 
 debug:
   # whether to save input crops

@@ -56,14 +56,14 @@ def clDice(v_p, v_l):
         tsens = cl_score(v_l,skeletonize_3d(v_p))
     return 2*tprec*tsens/(tprec+tsens)
 
-def binary_dice_score(mask, target, epsilon=1e-6):
+def binary_dice_score(prob, target, epsilon=1e-6):
     """
-    pred: probs from softmax 
+    prob: probs from softmax 
     target: binary gt mask
     both should be of shape B, C, D, H, W
     """
-    B = mask.shape[0]
-    # _, mask = pred.max(dim=1)
+    B = prob.shape[0]
+    _, mask = prob.max(dim=1)
     mask = mask.float().contiguous().view(B, -1)
     target = target.float().contiguous().view(B, -1)
     inter = torch.sum(mask * target, dim=1)

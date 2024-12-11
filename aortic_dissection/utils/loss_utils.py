@@ -1,9 +1,7 @@
 import torch
 import torch.nn as nn
 
-from monai.losses import DiceLoss, FocalLoss
-from aortic_dissection.loss.cl_dice import soft_cldice_loss
-from aortic_dissection.loss.boundary_dice import BoundarySoftDice
+from aortic_dissection.loss import *
 
 
 class DoubleLoss(nn.Module):
@@ -16,12 +14,9 @@ class DoubleLoss(nn.Module):
         assert len(double_loss_weight) == 2, "the length of DoubleLoss weight must be 2"
 
         self.double_loss_weight = double_loss_weight
-        self.focal_loss_func = FocalLoss(alpha=focal_alpha, gamma=focal_gamma)
-        # if class_num == 2:
-        #     self.dice_loss_func = BinaryDiceLoss()
-        # elif class_num > 2:
-        if class_num >= 2 :
-            self.dice_loss_func = DiceLoss(weight=dice_weights)
+        self.focal_loss_func = FocalLoss(class_num=class_num, alpha=focal_alpha, gamma=focal_gamma)
+        if class_num >= 2:
+            self.dice_loss_func = MultiDiceLoss(num_class=class_num, weights=dice_weights)
         else:
             raise ValueError('invalid class num')
 
@@ -55,7 +50,7 @@ class DoubleDiceLoss(nn.Module):
         self.double_loss_weight = double_loss_weight
         self.cl_dice_loss_func = soft_cldice_loss(iter, smooth)
         if class_num >= 2 :
-            self.dice_loss_func = DiceLoss(weight=dice_weights) 
+            self.dice_loss_func = MultiDiceLoss(num_class=class_num, weights=dice_weights) 
         else:
             raise ValueError('invalid class num')
 
@@ -84,15 +79,16 @@ def create_loss_local(cfg):
     assert "obj_weight" in cfg.loss.keys(), "please set __C.loss.obj_weight in train config file"
     assert len(cfg.loss.obj_weight) == cfg.dataset.num_classes
 
-    if cfg.loss.name == 'Focal':
+    if cfg.loss.name == 'FocalLoss':
         loss_func = FocalLoss(
             class_num=cfg.dataset.num_classes,
             alpha=cfg.loss.obj_weight,
             gamma=cfg.loss.focal_gamma)
 
-    elif cfg.loss.name == 'Dice':
-        dice_loss_func = DiceLoss(
-            weight=cfg.loss.obj_weight)
+    elif cfg.loss.name == 'DiceLoss':
+        dice_loss_func = MultiDiceLoss(
+            num_class=cfg.dataset.num_classes,
+            weights=cfg.loss.obj_weight)
         loss_func = lambda inputs, targets: dice_loss_func(inputs, targets)[0]
 
     elif cfg.loss.name == 'BoundaryLoss':

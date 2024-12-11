@@ -26,9 +26,9 @@ from torch.utils.data import DataLoader
 # from md.utils.python.file_tools import load_module_from_disk
 # from md_segmentation3d.utils.vseg_loss import create_loss_functon
 
-import monai
+# import monai
 from monai.transforms import Compose, EnsureChannelFirstd, RandCropByPosNegLabeld, Spacingd
-from monai.transforms import ToTensord, NormalizeIntensity, ThresholdIntensityd, ScaleIntensityRanged, ScaleIntensityRanged
+from monai.transforms import ToTensord, NormalizeIntensityd, ThresholdIntensityd, SpatialPadd, RandCropByLabelClassesd
 from monai.inferers import SlidingWindowInferer
 from monai.data import DataLoader, Dataset
 
@@ -38,7 +38,7 @@ from aortic_dissection.utils.loss_utils import create_loss_local
 from aortic_dissection.utils.train_utils import EpochConcateSampler
 from aortic_dissection.utils.plot_loss import plot_loss
 
-import easydict as edict
+from easydict import EasyDict as edict
 
 class Trainer:
     def __init__():
@@ -49,10 +49,11 @@ class Trainer:
         pass
 
 def create_loss(cfg):
-    try:
-        loss = create_loss_local(cfg)
-    except Exception as e:
-        loss = importlib.import_module("monai.losses." + cfg.loss.name)
+    # try:
+    loss = create_loss_local(cfg)
+    # except Exception as e:
+    #     print(e)
+    #     loss = importlib.import_module("monai.losses." + cfg.loss.name)
     return loss
 
 
@@ -75,7 +76,7 @@ def setup_logger(log_file, logger_name='Train Logger'):
 
     # 创建一个handler，用于写入日志文件，只记录ERROR及以上级别的日志
     fh = logging.FileHandler(log_file)
-    fh.setLevel(logging.ERROR)
+    fh.setLevel(logging.INFO)
 
     # 再创建一个handler，用于输出到控制台，从INFO级别开始记录
     ch = logging.StreamHandler()
@@ -93,17 +94,18 @@ def setup_logger(log_file, logger_name='Train Logger'):
     return logger
 
 
-def create_transform(dataset_cfg):
+def create_transforms(dataset_cfg):
     spacing, crop_size = dataset_cfg.spacing, dataset_cfg.crop_size
-    transform = Compose([
-    EnsureChannelFirstd(keys=["image", "mask"]),  # 确保通道维度位于最前面
+    transforms = Compose([
+    EnsureChannelFirstd(keys=["image", "mask"], channel_dim=0),  # 确保通道维度位于最前面
     Spacingd(
-        keys=["image", "label"],  # 指定需要重采样的键
+        keys=["image", "mask"],  # 指定需要重采样的键
         pixdim=spacing,  # 目标体素间距
         mode=("trilinear", "nearest"),  # 图像和标签的不同插值模式
-        align_corners=(True, True)  # 对齐角点参数
+        align_corners=(False, False)  # 对齐角点参数
     ),
-    NormalizeIntensity(subtrahend=300, divisor=400), # Fixed Mean Std normalization
+    SpatialPadd(keys=["image", "mask"], spatial_size=crop_size, mode=('constant', 'constant'), constant_values=(-3024, 0)),
+    NormalizeIntensityd(keys=["image"], subtrahend=dataset_cfg.crop_normalizers.mean, divisor=dataset_cfg.crop_normalizers.std), # Fixed Mean Std normalization
     ThresholdIntensityd(keys=['image'], threshold=-1., above=True, cval=-1.), # intensity < threshold（对应above=True）的置为cval
     ThresholdIntensityd(keys=['image'], threshold=1., above=False, cval=1.),   # intensity > threshold(对应above=False)的值置为cval
     # lambda x: (x - crop_normalizers["mean"]) / crop_normalizers["std"], # fixed mean std 归一化
@@ -115,9 +117,17 @@ def create_transform(dataset_cfg):
         num_samples=1,  # 每次迭代生成多少个样本
         # image_key="image"  # 如果需要考虑图像的边界限制，请指定此参数
     ),
+    # RandCropByLabelClassesd(
+    #         keys=["image", "mask"],
+    #         label_key="mask",
+    #         spatial_size=crop_size,
+    #         ratios=[1, 3],
+    #         num_classes=2,
+    #         num_samples=1,
+    #     ),
     ToTensord(keys=["image", "mask"])  # 转换为PyTorch张量
-])
-    return transform
+    ])
+    return transforms
 
 
 def worker_init(worker_idx):
@@ -134,7 +144,7 @@ def worker_init(worker_idx):
     torch.manual_seed(worker_seed)
     torch.cuda.manual_seed(worker_seed)
 
-def save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality, max_vscore, last_val_epoch):
+def save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, num_modality, max_vscore, last_val_epoch):
     """ save model and parameters into a checkpoint file (.pth)
 
     :param net: the network object
@@ -158,7 +168,7 @@ def save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride
              'batch':             batch_idx,
              'net':               cfg.net.name,
              'use_ds':            cfg.net.get('use_ds', False),
-             'max_stride':        max_stride,
+            #  'max_stride':        max_stride,
              'state_dict':        net.state_dict(),
              'spacing':           cfg.dataset.spacing,
              'interpolation':     cfg.dataset.interpolation,
@@ -166,7 +176,7 @@ def save_checkpoint(net, opt, epoch_idx, batch_idx, cfg, config_file, max_stride
              'default_values':    cfg.dataset.default_values,
              'in_channels':       num_modality,
              'out_channels':      cfg.dataset.num_classes,
-             'crop_normalizers':  [normalizer.to_dict() for normalizer in cfg.dataset.crop_normalizers],
+             'crop_normalizers':  cfg.dataset.crop_normalizers,
              'crop_size':         cfg.dataset.crop_size,
              'last_val_epoch':    last_val_epoch,
              'best_vscore':       max_vscore
@@ -268,15 +278,16 @@ def load_checkpoint_partial(epoch_idx, net, save_dir):
 #             write_image(output, os.path.join(case_out_folder, 'output.nii.gz'))
             
 
-def validate(net, opt, val_loader, epoch_idx, batch_idx, cfg, config_file, max_stride, num_modality, max_vscore, last_save_epoch):
+def validate(net, opt, val_loader, epoch_idx, batch_idx, cfg, config_file, num_modality, max_vscore, last_save_epoch):
     val_iter = iter(val_loader)
     last_val_epoch = epoch_idx  
-    inferer = SlidingWindowInferer(roi_size=cfg.dataset.crop_size, sw_batch_size=2, overlap=0.25, cval=-4) # 训练padding-1024，归一化后约-4         
+    inferer = SlidingWindowInferer(roi_size=cfg.dataset.crop_size, sw_batch_size=2, overlap=0.25, cval=-8) # 训练padding-3024，归一化后约-8        
     with torch.no_grad():
         net.eval()
         vscore_sum = 0
         for _ in range(len(val_loader)):
-            crops, mask = next(val_iter)
+            batch_data = next(val_iter)
+            crops, mask = batch_data["image"], batch_data["mask"]
             crops, mask = crops.cuda(), mask.cuda()
             print(crops.shape)
             print(mask.shape)
@@ -284,7 +295,7 @@ def validate(net, opt, val_loader, epoch_idx, batch_idx, cfg, config_file, max_s
             val_score =  binary_dice_score(output, mask)
             # val_score = multiclass_dice_score(output, mask)
             print('val score', val_score)
-            vscore_sum+=val_score.item()
+            vscore_sum+=val_score
         vscore_mean = vscore_sum/len(val_loader)
         print('mean val score:', vscore_mean)
         if vscore_mean > max_vscore:
@@ -299,7 +310,7 @@ def validate(net, opt, val_loader, epoch_idx, batch_idx, cfg, config_file, max_s
             out = pd.DataFrame(info)
             out.to_csv(cfg.general.save_dir+'validation.csv')
             last_save_epoch = epoch_idx
-            save_checkpoint(net, opt, last_save_epoch, batch_idx, cfg, config_file, max_stride, num_modality, max_vscore, last_val_epoch)
+            save_checkpoint(net, opt, last_save_epoch, batch_idx, cfg, config_file, num_modality, max_vscore, last_val_epoch)
     return last_save_epoch, last_val_epoch, max_vscore
 
 
@@ -318,9 +329,9 @@ def train(config_file, msg_queue=None):
 
     # convert to absolute path since cfg uses relative path
     root_dir = os.path.dirname(config_file)
-    cfg.general.imseg_list = os.path.join(root_dir, cfg.general.imseg_list)
+    cfg.general.data_file = os.path.join(root_dir, cfg.general.data_file)
     cfg.general.save_dir = os.path.join(root_dir, cfg.general.save_dir)
-
+    
     # control randomness during training
     np.random.seed(cfg.general.seed)
     torch.manual_seed(cfg.general.seed)
@@ -338,20 +349,27 @@ def train(config_file, msg_queue=None):
         else:
             raise ValueError("Please type either 'yes' or 'no'!")
 
+    if not os.path.exists(cfg.general.save_dir):
+        os.makedirs(cfg.general.save_dir)
+
     # enable logging
     log_file = os.path.join(cfg.general.save_dir, 'train_log.txt')
-    logger = setup_logger(log_file, 'vseg')
-
+    if not os.path.exists(log_file):
+        with open(log_file, 'w') as f:
+            f.write('')
+    logger = setup_logger(log_file, 'Trainer')
+    logger.info("Num Workers", cfg.train.num_threads)
     # enable CUDNN
     cudnn.benchmark = True
 
-    transform = create_transform(cfg.dataset)
+    transforms = create_transforms(cfg.dataset)
     # initialize dataset
     dataset = SegmentationDataset(
         data_file=cfg.general.data_file,
-        transform=transform
+        transforms=transforms,
+        aug_config=cfg.dataset.aug_config
     )
-    val_dataset = Val_dataset(data_file=cfg.general.val_list, transform=transform)
+    val_dataset = Val_dataset(data_file=cfg.general.val_list, transforms=transforms)
 
     sampler = EpochConcateSampler(dataset, cfg.train.epochs)
     # val_sampler = EpochConcateSampler(val_dataset, 1)
@@ -375,21 +393,21 @@ def train(config_file, msg_queue=None):
         weights[~loss_mask] = 0
         weights = weights[::-1] / weights.sum()
     else:
-        net = net_module.SegmentationNet(dataset.num_modality(), cfg.dataset.num_classes)
-    print("num modality ",dataset.num_modality())
-    max_stride = net.max_stride()
+        net = net_module.SegmentationNet(cfg.dataset.num_modality, cfg.dataset.num_classes)
+    print("num modality ", cfg.dataset.num_modality)
+    # max_stride = net.max_stride()
     # net_module.vnet_kaiming_init(net)
     net = nn.parallel.DataParallel(net, device_ids=gpu_ids)
     net = net.cuda() 
     
-    assert np.all(np.array(cfg.dataset.crop_size) % np.array(max_stride) == 0), 'crop size not divisible by max stride'
+    # assert np.all(np.array(cfg.dataset.crop_size) % np.array(max_stride) == 0), 'crop size not divisible by max stride'
 
     # define loss function
     
     loss_func = create_loss(cfg)
-
     # training optimizer
-    opt = getattr(torch.optim, cfg.train.optimizer.name)(
+    opt = getattr(torch.optim, cfg.train.optimizer.name)
+    opt = opt(
         [{'params': filter(lambda p: p.requires_grad, net.parameters()), 'initial_lr': cfg.train.lr}],
         lr=cfg.train.lr, **cfg.train.optimizer.params
     )
@@ -429,7 +447,8 @@ def train(config_file, msg_queue=None):
 
         begin_t = time.time()
 
-        crops, masks, frames, filenames = next(data_iter)
+        batch_data = next(data_iter)
+        crops, masks = batch_data["image"], batch_data["mask"]
         print('input shape:', crops.shape)
 
         # save training crops for visualization
@@ -503,13 +522,13 @@ def train(config_file, msg_queue=None):
         # validation
         if epoch_idx != 0 and (epoch_idx % cfg.train.val_epoch == 0) and epoch_idx != last_val_epoch:
             print('val round')
-            last_save_epoch, last_val_epoch, max_vscore = validate(net, opt, val_loader, epoch_idx,  batch_idx, cfg, config_file, max_stride,\
-                                                                    dataset.num_modality(), max_vscore, last_save_epoch)
+            last_save_epoch, last_val_epoch, max_vscore = validate(net, opt, val_loader, epoch_idx,  batch_idx, cfg, config_file,\
+                                                                    cfg.dataset.num_modality, max_vscore, last_save_epoch)
             
         # save checkpoints
         if epoch_idx != 0 and (epoch_idx % cfg.train.save_epochs == 0) and epoch_idx != last_save_epoch:
             last_save_epoch = epoch_idx
-            save_checkpoint(net, opt, last_save_epoch, batch_idx, cfg, config_file, max_stride, dataset.num_modality(), max_vscore, last_val_epoch)
+            save_checkpoint(net, opt, last_save_epoch, batch_idx, cfg, config_file, cfg.dataset.num_modality, max_vscore, last_val_epoch)
                       
 
 def main():

@@ -18,6 +18,7 @@ from tqdm import tqdm
 from monai.transforms import Rotate, LoadImaged, ToTensord
 import time
 import nibabel as nib
+import random
 
 
 def read_train_csv(csv_file):
@@ -107,32 +108,38 @@ def multiMask_read_train_csv(csv_file, num_mask):
 class SegmentationDataset(Dataset):
     """ training data set for volumetric segmentation """
 
-    def __init__(self, data_file:str, transform=None):
+    def __init__(self, data_file:str, aug_config, transforms=None):
         assert data_file.endswith(".csv"), "Only support csv input file"
         im_list, seg_list, sampling_list = read_train_csv(data_file)
         self.im_list = im_list
         self.seg_list = seg_list
         self.sampling_list = sampling_list
-        self.transform = transform
+        self.transforms = transforms
+        self.do_aug = True if random.random() < aug_config.aug_prob else False
 
     def __len__(self):
-        return len(self.data_file)
+        return len(self.im_list)
 
     def __getitem__(self, idx):
-        img_data = nib.load(self.im_list[idx], dtype=np.float32).get_fdata()
-        seg_data = nib.load(self.seg_list[idx], dtype=np.float32).get_fdata()
-        
+        inputs = []
+        for i in range(len(self.im_list[idx])):
+            img_data = nib.load(self.im_list[idx][i]).get_fdata().astype(np.float32)
+            inputs.append(img_data)
+        inputs = np.stack(inputs)
+        seg_data = nib.load(self.seg_list[idx]).get_fdata().astype(np.uint8)
+        seg_data = seg_data[np.newaxis, :]
         # 将numpy数组转换为字典，以便与MONAI的转换兼容
-        sample = {"image": img_data, "mask":seg_data}
-        
-        if self.transform:
-            sample = self.transform(sample)
-            
+        sample = {"image": inputs, "mask":seg_data}
+        # print(seg_data.max(), seg_data.min())
+        if self.transforms:
+            sample = self.transforms(sample)
+        sample = sample[0]
+        sample = {"image": sample["image"].as_tensor(), "mask":sample["mask"].as_tensor()}
+
         return sample
 
 
 class Val_dataset(Dataset):
-    # TODO
     def __init__(self, data_file, transforms):
         super().__init__()
         
@@ -144,17 +151,21 @@ class Val_dataset(Dataset):
             return len(self.im_list)
         return None
     def __getitem__(self, idx):
-        img_paths, seg_path = self.im_list[idx], self.seg_list[idx]
-        seg = LoadImaged(seg_path)
-        
-        images=[]
-        for idx, impath in enumerate(img_paths):
-            img = LoadImaged(impath)
-            images.append(img)
-        sample = {"image": images, "mask":seg}
-
-        if self.transform:
-            sample = self.transform(sample)
+        inputs = []
+        case_name = self.seg_list[idx].split("/")[-2]
+        for i in range(len(self.im_list[idx])):
+            img_data = nib.load(self.im_list[idx][i]).get_fdata().astype(np.float32)
+            inputs.append(img_data)
+        inputs = np.stack(inputs)
+        seg_data = nib.load(self.seg_list[idx]).get_fdata().astype(np.uint8)
+        seg_data = seg_data[np.newaxis, :]
+        # 将numpy数组转换为字典，以便与MONAI的转换兼容
+        sample = {"image": inputs, "mask":seg_data}
+        # print(seg_data.max(), seg_data.min())
+        if self.transforms:
+            sample = self.transforms(sample)
+        sample = sample[0]
+        sample = {"image": sample["image"].as_tensor(), "mask":sample["mask"].as_tensor(), "case_name":case_name}
 
         return sample
     
