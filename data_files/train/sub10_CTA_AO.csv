@@ -1,0 +1,11 @@
+image1,segmentation
+/root/autodl-tmp/train/CTA/AI05_0050_01_0.45/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0050_01_0.45/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0016_01_0.45/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0016_01_0.45/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0168_01_1.0/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0168_01_1.0/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0325_01_0.45/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0325_01_0.45/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0007_01_1.0/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0007_01_1.0/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0184_01_0.8/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0184_01_0.8/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0319_01_0.45/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0319_01_0.45/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI06_0083_02_0.8/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI06_0083_02_0.8/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0239_01_0.33/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0239_01_0.33/ao_mask.nii.gz
+/root/autodl-tmp/train/CTA/AI05_0045_01_1.0/CTA.nii.gz,/root/autodl-tmp/train/CTA/AI05_0045_01_1.0/ao_mask.nii.gz
